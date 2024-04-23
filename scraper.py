@@ -1,6 +1,6 @@
 import re
 from bs4 import BeautifulSoup
-import urlopen
+import socket
 from urllib.parse import urlparse, urljoin, urldefrag
 
 def scraper(url, resp):
@@ -26,7 +26,7 @@ def extract_next_links(url, resp):
 
         # for each <a> tag, extracts the href attribute and transforms the relative URL to absolute URL
         for tag in soup.find_all('a'):
-            try: 
+            try:
                 # discard the fragments from the relative url 
                 relativeURL = urldefrag(tag['href'])[0]
                 if relativeURL: 
@@ -39,14 +39,19 @@ def extract_next_links(url, resp):
     return links
 
 def is_valid(url):
-    # Decide whether to crawl this url or not. 
+    # Decide whether to crawl this url or not.
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
+    robots_txt_content = get_robots_txt(url)
+    disallowed_urls = disallowed_robots_urls(robots_txt_content)
+
     try:
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
             return False
         if not re.search(r"(ics\.uci\.edu|cs\.uci\.edu|informatics\.uci\.edu|stat\.uci\.edu)", parsed.netloc):
+            return False
+        if parsed.path in disallowed_urls: # If url path in disallowed, then robots.txt says not allowed
             return False
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
@@ -61,23 +66,51 @@ def is_valid(url):
     except TypeError:
         print ("TypeError for ", parsed)
         raise
-    
-# Politeness check - checking the robots.txt file - add to is_valid function?
-def robot_txt_check(url):
-    disallowed_subdirectories = [] # List of subdirectories of url the crawler is disallowed to search 
 
-    # try:
-    robot_txt_url = url.rstrip("/") + "/robots.txt"
-    with urlopen(robot_txt_url) as response:
-        robots_txt = response.read().decode("utf-8")
-        lines = robots_txt.split("\n")
-        for_all = False
+# Politeness check - checking the robots.txt file - add to is_valid function?
+def get_robots_txt(url):
+    '''Open robots.txt file of website to make sure that every
+    webpage accessed is allowed to our web crawler'''
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.netloc
+
+        # Connect to server 
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as response:
+            response.connect((hostname, 80))
+            request = f"GET /robots.txt HTTP/1.1\r\nHost: {hostname}\r\nConnection: close\r\n\r\n"
+            response.sendall(request.encode())
+
+            response = b""
+            while True:
+                data = response.recv(1024)
+                if not data:
+                    break
+                response += data
+
+            # Extract content from response
+            _, _, content = response.partition(b'\r\n\r\n')
+
+            # Decode content as utf-8
+            content_str = content.decode('utf-8')
+
+            return content_str
+
+    except Exception as error:
+        print("Error:", error)
+
+def disallowed_robots_urls(robots_txt_content):
+    '''Puts disallowed urls into disallowed_urls list'''
+
+    disallowed_urls = []
+    if robots_txt_content:
+        lines = robots_txt_content.split("\n")
+
         for line in lines:
-            if line.startswith("User-agent: *"):
-                for_all = True
-            if for_all == True and line.startswith("Disallow"):
-                subdir = line[10:] # Gets the subdirectory with /
-                disallowed_subdirectories.insert(subdir)
-                    
-#     except:
-#         pass
+            line = line.strip()
+            if line.startswith("Disallow: "):
+                disallowed_url = line[10:].strip()
+                disallowed_urls.append(disallowed_url)
+
+        return disallowed_urls
