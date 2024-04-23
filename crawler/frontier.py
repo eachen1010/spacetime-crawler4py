@@ -12,6 +12,9 @@ class Frontier(object):
         self.logger = get_logger("FRONTIER")
         self.config = config
         self.to_be_downloaded = list()
+
+        # added code
+        self.seen_urls = list()
         
         if not os.path.exists(self.config.save_file) and not restart:
             # Save file does not exist, but request to load save.
@@ -49,6 +52,7 @@ class Frontier(object):
 
     def get_tbd_url(self):
         try:
+
             return self.to_be_downloaded.pop()
         except IndexError:
             return None

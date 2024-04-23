@@ -1,6 +1,7 @@
 import re
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, urljoin
+import urlopen
+from urllib.parse import urlparse, urljoin, urldefrag
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -26,9 +27,11 @@ def extract_next_links(url, resp):
         # for each <a> tag, extracts the href attribute and transforms the relative URL to absolute URL
         for tag in soup.find_all('a'):
             try: 
-                relativeURL = tag['href']
-                #absoluteURL = urljoin(url, relativeURL)
-                links.append(relativeURL)
+                # discard the fragments from the relative url 
+                relativeURL = urldefrag(tag['href'])[0]
+                if relativeURL: 
+                    absoluteURL = urljoin(url, relativeURL)
+                    links.append(urldefrag(absoluteURL))
             except KeyError:
                 # if the 'href' attribute is not present in the tag, skip it
                 pass
@@ -43,6 +46,8 @@ def is_valid(url):
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
             return False
+        if not re.search(r"(ics\.uci\.edu|cs\.uci\.edu|informatics\.uci\.edu|stat\.uci\.edu)", parsed.netloc):
+            return False
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -56,3 +61,23 @@ def is_valid(url):
     except TypeError:
         print ("TypeError for ", parsed)
         raise
+    
+# Politeness check - checking the robots.txt file - add to is_valid function?
+def robot_txt_check(url):
+    disallowed_subdirectories = [] # List of subdirectories of url the crawler is disallowed to search 
+
+    # try:
+    robot_txt_url = url.rstrip("/") + "/robots.txt"
+    with urlopen(robot_txt_url) as response:
+        robots_txt = response.read().decode("utf-8")
+        lines = robots_txt.split("\n")
+        for_all = False
+        for line in lines:
+            if line.startswith("User-agent: *"):
+                for_all = True
+            if for_all == True and line.startswith("Disallow"):
+                subdir = line[10:] # Gets the subdirectory with /
+                disallowed_subdirectories.insert(subdir)
+                    
+#     except:
+#         pass
