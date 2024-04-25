@@ -4,6 +4,7 @@ from manager import Manager
 from tokenizer import tokenize
 from urllib.parse import urlparse, urljoin, urldefrag
 from helper import compare_urls
+import urllib.robotparser
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -92,6 +93,8 @@ def is_valid(url):
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
             return False
+        if not robots_txt_check(url):
+            return False
         return ".ics.uci.edu" in parsed.hostname and not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -105,3 +108,16 @@ def is_valid(url):
     except TypeError:
         print ("TypeError for ", parsed)
         raise
+
+def robots_txt_check(url):
+    # Checks if robots.txt of website allows us to crawl other paths
+    parsed = urlparse(url)
+    robot_parser = urllib.robotparser.RobotFileParser()
+    robot_txt_url = f"{parsed.scheme}://{parsed.hostname}/robots.txt"
+
+    robot_parser.set_url(robot_txt_url)  # URL to read
+    robot_parser.read()  # Reads robots.txt file
+
+    if robot_parser.can_fetch("*", url): # Returns True if robots.txt allows useragent to fetch URL
+        return True
+    return False
